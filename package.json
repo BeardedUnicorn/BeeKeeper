@@ -1,8 +1,19 @@
 {
   "name": "beekeeper",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "A cozy strategy sim about managing hives across seasons.",
+  "license": "MIT",
+  "author": "Mike Herold",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BeardedUnicorn/BeeKeeper.git"
+  },
   "type": "module",
+  "packageManager": "pnpm@11.24.0",
+  "engines": {
+    "node": ">=20.19"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -19,13 +30,13 @@
     "android:build": "tauri android build"
   },
   "dependencies": {
-    "@tauri-apps/plugin-fs": "^2.4.5",
+    "@tauri-apps/plugin-fs": "^2.7.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
-    "@tauri-apps/cli": "latest",
+    "@tauri-apps/cli": "^2.12.4",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
