@@ -784,9 +784,9 @@ export const hydrateState = (raw: unknown): GameState => {
   const rawHives = Array.isArray(data.hives) && data.hives.length > 0 ? data.hives : base.hives
   // Backfill new Hive fields for saves that predate them
   const hives = rawHives.map((hive) => ({
-    previousPopulation: hive.population ?? 0,
-    lowStoresDays: 0,
-    ...hive
+    ...hive,
+    previousPopulation: hive.previousPopulation ?? hive.population ?? 0,
+    lowStoresDays: hive.lowStoresDays ?? 0
   }))
 
   const events = Array.isArray(data.events) ? data.events : base.events
