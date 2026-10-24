@@ -3,8 +3,8 @@
 ## Scope
 - Rule set: `$vercel-composition-patterns`
 - Hotspots reviewed:
-  - `/Users/mike/code/BeeKeeper/src/App.tsx`
-  - `/Users/mike/code/BeeKeeper/src/game.ts`
+  - `src/App.tsx`
+  - `src/game.ts`
 - Boundaries: UI composition, domain seams, persistence seams
 
 ## Severity scale
@@ -15,31 +15,31 @@
 ## Findings by Rule ID
 
 ### `architecture-compound-components`
-- `P1` Monolithic UI composition previously concentrated in `/Users/mike/code/BeeKeeper/src/App.tsx` (single component owned hero, hives, objective, queen yard, log, status, and persistence actions).
+- `P1` Monolithic UI composition previously concentrated in `src/App.tsx` (single component owned hero, hives, objective, queen yard, log, status, and persistence actions).
 - `P1` Stateful orchestration and rendering concerns were tightly coupled, preventing independent reuse of internal sections.
 - References:
-  - `/Users/mike/code/BeeKeeper/src/App.tsx:1`
-  - `/Users/mike/code/BeeKeeper/src/game.ts:1`
-- Remediation: Introduced provider + composed feature components under `/Users/mike/code/BeeKeeper/src/features/apiary/components`.
+  - `src/App.tsx:1`
+  - `src/game.ts:1`
+- Remediation: Introduced provider + composed feature components under `src/features/apiary/components`.
 
 ### `architecture-avoid-boolean-props`
-- `P2` Prior status rendering used mode conditionals inline in `/Users/mike/code/BeeKeeper/src/App.tsx` and mixed multiple mode branches into one render tree.
+- `P2` Prior status rendering used mode conditionals inline in `src/App.tsx` and mixed multiple mode branches into one render tree.
 - `P2` Persistence mode (`isTauriApp`) toggled behavior in-line rather than explicit variants.
 - Remediation: Added explicit variants `StatusBannerWon`, `StatusBannerLost`, `TauriPersistenceControls`, and `WebPersistenceControls`.
 
 ### `state-context-interface`
 - `P1` UI previously consumed reducer dispatch directly, with no typed state/actions/meta contract boundary.
 - References:
-  - `/Users/mike/code/BeeKeeper/src/App.tsx:1`
-  - `/Users/mike/code/BeeKeeper/src/game.ts:38`
-- Remediation: Added `ApiaryContextState`, `ApiaryContextActions`, `ApiaryContextMeta`, `ApiaryContextValue` in `/Users/mike/code/BeeKeeper/src/features/apiary/context/ApiaryContext.tsx`.
+  - `src/App.tsx:1`
+  - `src/game.ts:38`
+- Remediation: Added `ApiaryContextState`, `ApiaryContextActions`, `ApiaryContextMeta`, `ApiaryContextValue` in `src/features/apiary/context/ApiaryContext.tsx`.
 
 ### `state-decouple-implementation`
 - `P1` State implementation details (reducer wiring, dispatch action literals, IO side effects) were visible in rendering code.
 - References:
-  - `/Users/mike/code/BeeKeeper/src/App.tsx:1`
-  - `/Users/mike/code/BeeKeeper/src/game.ts:364`
-- Remediation: Moved orchestration into `/Users/mike/code/BeeKeeper/src/features/apiary/provider/ApiaryProvider.tsx`; components only consume context contracts.
+  - `src/App.tsx:1`
+  - `src/game.ts:364`
+- Remediation: Moved orchestration into `src/features/apiary/provider/ApiaryProvider.tsx`; components only consume context contracts.
 
 ### `state-lift-state`
 - `P2` Shared values (`selectedHive`, aggregate metrics, inter-panel state) were computed in one parent component and not provided as injectable context.
@@ -56,14 +56,14 @@
 ### `react19-no-forwardref`
 - `P3` No `forwardRef` usage detected.
 - `P2` Context consumption was not standardized to React 19 `use()` pattern.
-- Remediation: Added `/Users/mike/code/BeeKeeper/src/features/apiary/hooks/useApiary.ts` using `use(ApiaryContext)`.
+- Remediation: Added `src/features/apiary/hooks/useApiary.ts` using `use(ApiaryContext)`.
 
 ## Domain and Persistence Seams
-- `/Users/mike/code/BeeKeeper/src/game.ts` remains a pure simulation/domain module (no UI coupling introduced).
+- `src/game.ts` remains a pure simulation/domain module (no UI coupling introduced).
 - Persistence is now abstracted behind:
-  - `/Users/mike/code/BeeKeeper/src/persistence/SaveRepository.ts`
-  - `/Users/mike/code/BeeKeeper/src/persistence/TauriSaveRepository.ts`
-  - `/Users/mike/code/BeeKeeper/src/persistence/WebUnsupportedSaveRepository.ts`
+  - `src/persistence/SaveRepository.ts`
+  - `src/persistence/TauriSaveRepository.ts`
+  - `src/persistence/WebUnsupportedSaveRepository.ts`
 
 ## Remediation Mapping
 - Provider/context boundary: completed.

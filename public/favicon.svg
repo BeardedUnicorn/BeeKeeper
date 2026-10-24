@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <clipPath id="body">
+      <ellipse cx="512" cy="590" rx="150" ry="200" />
+    </clipPath>
+  </defs>
+  <polygon
+    points="512,62 901,287 901,737 512,962 123,737 123,287"
+    fill="#f6c453"
+    stroke="#e2a93c"
+    stroke-width="44"
+    stroke-linejoin="round"
+  />
+  <g stroke="#2f2419" stroke-width="18" stroke-linecap="round" fill="none">
+    <path d="M488 285 Q450 210 405 196" />
+    <path d="M536 285 Q574 210 619 196" />
+  </g>
+  <circle cx="405" cy="196" r="18" fill="#2f2419" />
+  <circle cx="619" cy="196" r="18" fill="#2f2419" />
+  <g fill="#fff4e0" fill-opacity="0.92" stroke="#2f2419" stroke-width="18">
+    <ellipse cx="370" cy="470" rx="140" ry="92" transform="rotate(30 370 470)" />
+    <ellipse cx="654" cy="470" rx="140" ry="92" transform="rotate(-30 654 470)" />
+  </g>
+  <polygon points="488,780 536,780 512,846" fill="#2f2419" />
+  <ellipse cx="512" cy="590" rx="150" ry="200" fill="#f8d36a" />
+  <g clip-path="url(#body)" fill="#2f2419">
+    <rect x="340" y="525" width="344" height="58" />
+    <rect x="340" y="645" width="344" height="58" />
+  </g>
+  <ellipse cx="512" cy="590" rx="150" ry="200" fill="none" stroke="#2f2419" stroke-width="22" />
+  <circle cx="512" cy="345" r="82" fill="#2f2419" />
+</svg>
