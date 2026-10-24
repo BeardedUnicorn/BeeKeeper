@@ -1,14 +1,22 @@
-import { ACTION_COSTS, QUEEN_TRAITS } from '../../../game'
+import { ACTION_COSTS, QUEEN_TRAITS, SEASON_LENGTH } from '../../../game'
 import { useApiary } from '../hooks/useApiary'
 
 export const QueenYardPanel = () => {
   const { state, actions } = useApiary()
 
+  const daysLeft = SEASON_LENGTH - state.game.seasonDay
+  const candidatesExpireSoon = daysLeft <= 4
+
   return (
-    <section className="panel queen-yard">
+    <section id="queen-yard" className="panel queen-yard">
       <div className="panel-header">
         <h2>Queen Yard</h2>
-        <p>Choose a new queen to steer a hive. Cost: {ACTION_COSTS.requeen} honey.</p>
+        <p>
+          Choose a new queen to steer a hive. Cost: {ACTION_COSTS.requeen} honey.{' '}
+          <span className={candidatesExpireSoon ? 'queen-expiry-warning' : 'queen-expiry-note'}>
+            Candidates refresh each season — {daysLeft} day{daysLeft !== 1 ? 's' : ''} remaining.
+          </span>
+        </p>
       </div>
       <div className="queen-select">
         <label htmlFor="hive-select">Target hive</label>

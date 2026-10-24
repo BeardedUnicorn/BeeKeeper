@@ -29,16 +29,21 @@
   box-sizing: border-box;
 }
 
+html {
+  height: 100%;
+}
+
 body {
   margin: 0;
-  min-height: 100vh;
+  height: 100%;
   background: radial-gradient(circle at top, rgba(255, 250, 235, 0.9), rgba(245, 231, 210, 0.9)),
     repeating-linear-gradient(120deg, rgba(255, 234, 190, 0.3) 0 12px, rgba(255, 247, 224, 0.2) 12px 24px);
+  background-attachment: fixed;
   color: var(--ink);
 }
 
 #root {
-  min-height: 100vh;
+  height: 100%;
 }
 
 a {

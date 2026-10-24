@@ -14,11 +14,13 @@ export interface Hive {
   id: string
   name: string
   population: number
+  previousPopulation: number
   honey: number
   health: number
   allocation: AllocationPreset
   queen: Queen
   immunityDays: number
+  lowStoresDays: number
 }
 
 export interface GameEvent {
@@ -49,6 +51,7 @@ export interface GameState {
 }
 
 export const SEASON_LENGTH = 30
+export const LOW_STORES_WARNING_DAYS = 7
 
 export const VICTORY_REQUIREMENTS = {
   year: 3,
@@ -75,18 +78,58 @@ export const SEASONS: Array<{
   death: number
   consume: number
   label: string
+  tip: string
 }> = [
-  { name: 'Spring', honey: 1.0, brood: 1.2, threat: 0.9, death: 0.9, consume: 1.0, label: 'Build Up' },
-  { name: 'Summer', honey: 1.3, brood: 1.0, threat: 1.0, death: 1.0, consume: 0.9, label: 'Harvest' },
-  { name: 'Autumn', honey: 0.9, brood: 0.8, threat: 1.1, death: 1.05, consume: 1.1, label: 'Prepare' },
-  { name: 'Winter', honey: 0.3, brood: 0.4, threat: 1.3, death: 1.35, consume: 1.8, label: 'Survive' }
+  {
+    name: 'Spring',
+    honey: 1.0,
+    brood: 1.2,
+    threat: 0.9,
+    death: 0.9,
+    consume: 1.0,
+    label: 'Build Up',
+    tip: 'Brood rates surge. Brood Focus grows populations quickly; threats are low.'
+  },
+  {
+    name: 'Summer',
+    honey: 1.3,
+    brood: 1.0,
+    threat: 1.0,
+    death: 1.0,
+    consume: 0.9,
+    label: 'Harvest',
+    tip: 'Peak honey production. Forage Focus maximises harvest before Autumn.'
+  },
+  {
+    name: 'Autumn',
+    honey: 0.9,
+    brood: 0.8,
+    threat: 1.1,
+    death: 1.05,
+    consume: 1.1,
+    label: 'Prepare',
+    tip: 'Threats intensify and stores begin to matter. Consider Defense Focus.'
+  },
+  {
+    name: 'Winter',
+    honey: 0.3,
+    brood: 0.4,
+    threat: 1.3,
+    death: 1.35,
+    consume: 1.8,
+    label: 'Survive',
+    tip: 'Honey consumption rises to 1.8x normal. Ensure each hive has 7+ days of stores.'
+  }
 ]
 
-export const ALLOCATION_PRESETS: Record<AllocationPreset, { forage: number; defense: number; brood: number }> = {
-  Balanced: { forage: 40, defense: 30, brood: 30 },
-  'Forage Focus': { forage: 60, defense: 20, brood: 20 },
-  'Defense Focus': { forage: 30, defense: 50, brood: 20 },
-  'Brood Focus': { forage: 30, defense: 20, brood: 50 }
+export const ALLOCATION_PRESETS: Record<
+  AllocationPreset,
+  { forage: number; defense: number; brood: number; healthNote: string }
+> = {
+  Balanced: { forage: 40, defense: 30, brood: 30, healthNote: 'Stable health' },
+  'Forage Focus': { forage: 60, defense: 20, brood: 20, healthNote: 'Gradual health cost' },
+  'Defense Focus': { forage: 30, defense: 50, brood: 20, healthNote: 'Steady health gain' },
+  'Brood Focus': { forage: 30, defense: 20, brood: 50, healthNote: 'Moderate health gain' }
 }
 
 export const QUEEN_TRAITS: Record<
@@ -119,7 +162,7 @@ export const QUEEN_TRAITS: Record<
     modifiers: { honey: 0.95, brood: 1.05, defense: 1.15, health: 1.0, threat: 0.8 }
   },
   Swarming: {
-    effect: '+15% honey, +20% brood, higher swarm risk',
+    effect: '+15% honey, +20% brood, higher swarm risk above 20k bees',
     modifiers: { honey: 1.15, brood: 1.2, defense: 0.9, health: 0.95, threat: 1.12 }
   }
 }
@@ -153,6 +196,8 @@ const THREAT_WEIGHTS: Record<SeasonName, Array<[ThreatType, number]>> = {
     ['Wasps', 1]
   ]
 }
+
+const SEVERITY_LABELS: Record<number, string> = { 1: 'minor', 2: 'moderate', 3: 'severe' }
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
 
@@ -203,10 +248,30 @@ const createQueen = (trait: QueenTrait): Queen => ({
   trait
 })
 
-export const createQueenCandidates = (): QueenCandidate[] => {
+export const createQueenCandidates = (avgHealth?: number): QueenCandidate[] => {
   const traits = Object.keys(QUEEN_TRAITS) as QueenTrait[]
-  const shuffled = [...traits].sort(() => Math.random() - 0.5)
-  return shuffled.slice(0, 3).map((trait) => ({
+
+  // Weight toward Hardy / Hygienic when apiary health is struggling
+  let weighted: Array<[QueenTrait, number]>
+  if (avgHealth !== undefined && avgHealth < 50) {
+    weighted = traits.map((t) => {
+      const boost = t === 'Hardy' || t === 'Hygienic' ? 3 : 1
+      return [t, boost] as [QueenTrait, number]
+    })
+  } else {
+    weighted = traits.map((t) => [t, 1])
+  }
+
+  const chosen: QueenTrait[] = []
+  const remaining = [...weighted]
+  while (chosen.length < 3 && remaining.length > 0) {
+    const pick = pickWeighted(remaining)
+    chosen.push(pick)
+    const idx = remaining.findIndex(([t]) => t === pick)
+    if (idx !== -1) remaining.splice(idx, 1)
+  }
+
+  return chosen.map((trait) => ({
     id: makeId(),
     name: QUEEN_NAMES[randInt(0, QUEEN_NAMES.length - 1)],
     trait,
@@ -227,21 +292,25 @@ export const initialState = (): GameState => {
         id: makeId(),
         name: HIVE_NAMES[0],
         population: 12000,
+        previousPopulation: 12000,
         honey: 14,
         health: 82,
         allocation: 'Balanced',
         queen: createQueen('Productive'),
-        immunityDays: 0
+        immunityDays: 0,
+        lowStoresDays: 0
       },
       {
         id: makeId(),
         name: HIVE_NAMES[1],
         population: 9800,
+        previousPopulation: 9800,
         honey: 9,
         health: 76,
         allocation: 'Brood Focus',
         queen: createQueen('Hardy'),
-        immunityDays: 0
+        immunityDays: 0,
+        lowStoresDays: 0
       }
     ],
     events: [
@@ -249,7 +318,7 @@ export const initialState = (): GameState => {
         id: makeId(),
         day: 1,
         tone: 'neutral',
-        text: 'Spring begins. Your apiary hums to life.'
+        text: 'Spring begins. Your apiary hums to life. Focus on building population before the summer honey flow.'
       }
     ],
     queenCandidates: createQueenCandidates(),
@@ -259,13 +328,14 @@ export const initialState = (): GameState => {
 
 const logEvent = (events: GameEvent[], event: Omit<GameEvent, 'id'>) => {
   const next = [{ ...event, id: makeId() }, ...events]
-  return next.slice(0, 10)
+  return next.slice(0, 25)
 }
 
 const tickHive = (
   hive: Hive,
   season: (typeof SEASONS)[number],
-  difficulty: Difficulty
+  difficulty: Difficulty,
+  opportunityBonus = 1.0
 ): { hive: Hive; events: GameEvent[] } => {
   const allocation = ALLOCATION_PRESETS[hive.allocation]
   const queen = QUEEN_TRAITS[hive.queen.trait]
@@ -276,7 +346,7 @@ const tickHive = (
 
   const foragerScale = Math.pow(hive.population / 1000, 0.85)
   const honeyGain =
-    foragerScale * 0.9 * forageFactor * season.honey * queen.modifiers.honey * difficulty.honey
+    foragerScale * 0.9 * forageFactor * season.honey * queen.modifiers.honey * difficulty.honey * opportunityBonus
   const popGain = hive.population * 0.008 * broodFactor * season.brood * queen.modifiers.brood
   const popLoss = hive.population * 0.005 * season.death * difficulty.death * (1.25 - hive.health / 100)
 
@@ -292,7 +362,9 @@ const tickHive = (
 
   const events: GameEvent[] = []
 
+  // ── Starvation ─────────────────────────────────────────────────────────────
   const consumption = Math.max(0, (population / 1000) * HONEY_CONSUME_BASE_PER_1000 * season.consume)
+  let lowStoresDays = hive.lowStoresDays
   if (consumption > 0) {
     honey = Math.max(0, honey - consumption)
     const storesDays = honey / consumption
@@ -300,9 +372,56 @@ const tickHive = (
       const hunger = clamp(1 - storesDays / STARVATION_THRESHOLD_DAYS, 0, 1)
       health = clamp(health - (2 + 6 * hunger) * season.death, 0, 100)
       population = Math.max(0, population - population * (0.003 + 0.01 * hunger) * season.death)
+      lowStoresDays += 1
+      if (hive.lowStoresDays === 0) {
+        events.push({
+          id: makeId(),
+          day: 0,
+          tone: 'bad',
+          text: `${hive.name} is starving — stores will last only ${storesDays.toFixed(1)} more days. Population and health are declining.`
+        })
+      } else if (lowStoresDays % 5 === 0) {
+        events.push({
+          id: makeId(),
+          day: 0,
+          tone: 'bad',
+          text: `${hive.name} continues to starve (day ${lowStoresDays}). Harvest hive stores immediately or the colony may collapse.`
+        })
+      }
+    } else {
+      if (hive.lowStoresDays > 0) {
+        events.push({
+          id: makeId(),
+          day: 0,
+          tone: 'good',
+          text: `${hive.name} has adequate stores again (${storesDays.toFixed(1)} days supply).`
+        })
+      }
+      lowStoresDays = 0
     }
+  } else {
+    lowStoresDays = 0
   }
 
+  // ── Health warnings ────────────────────────────────────────────────────────
+  if (hive.health >= 50 && health < 50) {
+    events.push({
+      id: makeId(),
+      day: 0,
+      tone: 'bad',
+      text: `${hive.name} health has fallen below 50%. Consider treatment or switching to Defense Focus.`
+    })
+  }
+  if (hive.allocation === 'Forage Focus' && hive.health >= 60 && health < 60) {
+    events.push({
+      id: makeId(),
+      day: 0,
+      tone: 'neutral',
+      text: `${hive.name}'s health is declining under Forage Focus. Reducing foraging allocation would slow the damage.`
+    })
+  }
+
+  // ── Threat ─────────────────────────────────────────────────────────────────
   const threatBase = 0.05 * season.threat * queen.modifiers.threat * difficulty.threat
   const defenseMitigation = defenseFactor * queen.modifiers.defense
   const immunity = hive.immunityDays > 0 ? 0.6 : 1
@@ -321,14 +440,16 @@ const tickHive = (
     honey = Math.max(0, honey - honeyHit)
     health = clamp(health - healthHit, 0, 100)
 
+    const severityLabel = SEVERITY_LABELS[severity] ?? 'moderate'
     events.push({
       id: makeId(),
       day: 0,
       tone: 'bad',
-      text: `${hive.name} faced ${threat} (severity ${severity}).`
+      text: `${hive.name} suffered a ${severityLabel} ${threat} attack. Lost ~${Math.round(popHit).toLocaleString()} bees and ${honeyHit.toFixed(1)} honey jars; health fell ${healthHit.toFixed(0)} points.`
     })
   }
 
+  // ── Swarming queen ─────────────────────────────────────────────────────────
   if (hive.queen.trait === 'Swarming' && population > 22000 && Math.random() < 0.03) {
     const swarmLoss = population * 0.22
     population = Math.max(0, population - swarmLoss)
@@ -336,16 +457,24 @@ const tickHive = (
       id: makeId(),
       day: 0,
       tone: 'neutral',
-      text: `${hive.name} swarmed; a cluster departed with ${Math.round(swarmLoss).toLocaleString()} bees.`
+      text: `${hive.name} swarmed — a cluster of ${Math.round(swarmLoss).toLocaleString()} bees departed. Consider splitting to prevent future losses.`
+    })
+  } else if (hive.queen.trait === 'Swarming' && hive.population <= 20000 && population > 20000) {
+    events.push({
+      id: makeId(),
+      day: 0,
+      tone: 'neutral',
+      text: `${hive.name}'s Swarming queen is becoming restless. A swarm may depart soon — consider splitting now to control the loss.`
     })
   }
 
+  // ── Critical health ────────────────────────────────────────────────────────
   if (health < 25) {
     events.push({
       id: makeId(),
       day: 0,
       tone: 'bad',
-      text: `${hive.name} health is critical. Consider treatment.`
+      text: `${hive.name} health is critical (${Math.round(health)}%). Treat immediately or the hive may collapse.`
     })
   }
 
@@ -353,9 +482,11 @@ const tickHive = (
     hive: {
       ...hive,
       population,
+      previousPopulation: hive.population,
       honey,
       health,
-      immunityDays: Math.max(0, hive.immunityDays - 1)
+      immunityDays: Math.max(0, hive.immunityDays - 1),
+      lowStoresDays
     },
     events
   }
@@ -371,8 +502,40 @@ export const advanceDays = (state: GameState, days: number): GameState => {
     const dailyEvents: GameEvent[] = []
     const updatedHives: Hive[] = []
 
+    // ── Daily opportunity event (~10% chance) ────────────────────────────────
+    let dayOpportunityBonus = 1.0
+    const opportunityRoll = Math.random()
+    if (opportunityRoll < 0.06) {
+      dayOpportunityBonus = 1.3
+      dailyEvents.push({
+        id: makeId(),
+        day: 0,
+        tone: 'good',
+        text: 'A nearby wildflower meadow is in peak bloom — all hives are collecting extra honey today (+30%).'
+      })
+    } else if (opportunityRoll < 0.10) {
+      dayOpportunityBonus = 1.15
+      dailyEvents.push({
+        id: makeId(),
+        day: 0,
+        tone: 'good',
+        text: 'Favourable foraging conditions today — bees are returning with heavier loads (+15% honey).'
+      })
+    }
+
     for (const hive of next.hives) {
-      const { hive: updated, events } = tickHive(hive, season, difficulty)
+      const { hive: updated, events } = tickHive(hive, season, difficulty, dayOpportunityBonus)
+
+      // Split nudge: hive just crossed the eligibility threshold this tick
+      if (hive.population < 15000 && updated.population >= 15000 && next.stockpile >= ACTION_COSTS.split) {
+        dailyEvents.push({
+          id: makeId(),
+          day: 0,
+          tone: 'good',
+          text: `${hive.name} is now strong enough to split. Creating a new hive now would expand your apiary.`
+        })
+      }
+
       if (updated.population < 600 || updated.health < 8) {
         dailyEvents.push({
           id: makeId(),
@@ -389,24 +552,58 @@ export const advanceDays = (state: GameState, days: number): GameState => {
     next.day += 1
     next.seasonDay += 1
 
+    // ── Queen candidate expiry warning ───────────────────────────────────────
+    if (next.seasonDay === SEASON_LENGTH - 2) {
+      next.events = logEvent(next.events, {
+        day: next.day,
+        tone: 'neutral',
+        text: 'The season ends in 3 days — last chance to assign a queen from the current yard before candidates are replaced.'
+      })
+    }
+
     if (next.seasonDay > SEASON_LENGTH) {
       next.seasonDay = 1
       next.seasonIndex = (next.seasonIndex + 1) % SEASONS.length
+
       if (next.seasonIndex === 0) {
         next.year += 1
+        const diff = difficultyForYear(next.year)
+        const threatPct = Math.round((diff.threat - 1) * 100)
+        const honeyPct = Math.round((1 - diff.honey) * 100)
         next.events = logEvent(next.events, {
           day: next.day,
           tone: 'neutral',
-          text: `Year ${next.year} begins. Threats intensify across the region.`
+          text: `Year ${next.year} begins. Threats are ${threatPct}% more frequent and honey yields are ${honeyPct}% lower. Adapt your strategy.`
         })
       }
-      next.queenCandidates = createQueenCandidates()
+
+      // Refresh queen candidates weighted by current apiary health
+      const curAvgHealth = averageHealth(next.hives)
+      next.queenCandidates = createQueenCandidates(curAvgHealth)
+
       const newSeason = SEASONS[next.seasonIndex]
       next.events = logEvent(next.events, {
         day: next.day,
         tone: 'neutral',
-        text: `${newSeason.name} arrives. Focus: ${newSeason.label}.`
+        text: `${newSeason.name} arrives. Focus: ${newSeason.label}. ${newSeason.tip}`
       })
+
+      // ── Late-game stockpile advisories ──────────────────────────────────────
+      const jarsNeeded = VICTORY_REQUIREMENTS.stockpile - next.stockpile
+      if (next.year === 2 && newSeason.name === 'Summer' && jarsNeeded > 0) {
+        next.events = logEvent(next.events, {
+          day: next.day,
+          tone: 'neutral',
+          text: `Summer is your best honey window. You need ${Math.ceil(jarsNeeded)} more jars to reach your goal. Harvest aggressively before Autumn.`
+        })
+      }
+      if (next.year === 2 && newSeason.name === 'Autumn' && jarsNeeded > 40) {
+        next.events = logEvent(next.events, {
+          day: next.day,
+          tone: 'neutral',
+          text: `You need ${Math.ceil(jarsNeeded)} more honey jars to win. Winter approaches — harvest now while production is still possible.`
+        })
+      }
     }
 
     next.hives = updatedHives
@@ -468,7 +665,7 @@ export const harvestHive = (state: GameState, hiveId: string): GameState => {
     events: logEvent(state.events, {
       day: state.day,
       tone: 'good',
-      text: `Harvested ${harvested.toFixed(1)} jars from ${hive.name} (lost ${lost.toFixed(1)}).`
+      text: `Harvested ${harvested.toFixed(1)} jars from ${hive.name} (lost ${lost.toFixed(1)} to extraction).`
     })
   }
 }
@@ -493,7 +690,7 @@ export const treatHive = (state: GameState, hiveId: string): GameState => {
     events: logEvent(state.events, {
       day: state.day,
       tone: 'good',
-      text: `${hive.name} received treatment. Health is improving.`
+      text: `${hive.name} received treatment (+18 health). Immunity active for 10 days — threat damage reduced by 40%.`
     })
   }
 }
@@ -512,25 +709,29 @@ export const splitHive = (state: GameState, hiveId: string): GameState => {
     stockpile: state.stockpile - cost,
     hives: state.hives.flatMap((item) => {
       if (item.id !== hiveId) return [item]
-      const splitHive: Hive = {
+      const newHive: Hive = {
         ...item,
         id: makeId(),
         name: HIVE_NAMES[randInt(0, HIVE_NAMES.length - 1)],
         population: newPopulation,
+        previousPopulation: newPopulation,
         honey: newHoney,
         health: clamp(item.health - 6, 0, 100),
         allocation: 'Balanced',
         queen: createQueen(item.queen.trait),
-        immunityDays: 0
+        immunityDays: 0,
+        lowStoresDays: 0
       }
       return [
         {
           ...item,
           population: Math.round(item.population * 0.58),
+          previousPopulation: item.population,
           honey: Number((item.honey * 0.65).toFixed(1)),
-          health: clamp(item.health - 4, 0, 100)
+          health: clamp(item.health - 4, 0, 100),
+          lowStoresDays: 0
         },
-        splitHive
+        newHive
       ]
     }),
     events: logEvent(state.events, {
@@ -563,7 +764,7 @@ export const requeenHive = (state: GameState, hiveId: string, candidateId: strin
     events: logEvent(state.events, {
       day: state.day,
       tone: 'good',
-      text: `${hive.name} selected Queen ${candidate.name} (${candidate.trait}).`
+      text: `${hive.name} accepted Queen ${candidate.name} (${candidate.trait}). ${QUEEN_TRAITS[candidate.trait].effect}.`
     })
   }
 }
@@ -580,7 +781,14 @@ export const hydrateState = (raw: unknown): GameState => {
   if (!raw || typeof raw !== 'object') return base
   const data = raw as Partial<GameState>
 
-  const hives = Array.isArray(data.hives) && data.hives.length > 0 ? data.hives : base.hives
+  const rawHives = Array.isArray(data.hives) && data.hives.length > 0 ? data.hives : base.hives
+  // Backfill new Hive fields for saves that predate them
+  const hives = rawHives.map((hive) => ({
+    previousPopulation: hive.population ?? 0,
+    lowStoresDays: 0,
+    ...hive
+  }))
+
   const events = Array.isArray(data.events) ? data.events : base.events
   const queenCandidates =
     Array.isArray(data.queenCandidates) && data.queenCandidates.length > 0
